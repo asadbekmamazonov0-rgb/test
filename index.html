@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TERMINAL: Ultra Control 100</title>
+    <style>
+        :root { --bg: #0d1117; --card: #161b22; --text: #c9d1d9; --accent: #58a6ff; --danger: #f85149; --success: #3fb950; --warning: #d29922; }
+        body { font-family: 'Courier New', monospace; background: var(--bg); color: var(--text); padding: 10px; margin: 0; user-select: none; }
+        .container { max-width: 550px; margin: 15px auto; background: var(--card); padding: 25px; border-radius: 12px; border: 1px solid #30363d; box-shadow: 0 10px 40px rgba(0,0,0,0.8); position: relative; }
+        
+        .progress-container { width: 100%; background: #21262d; height: 6px; border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
+        #progress-fill { height: 100%; background: var(--accent); width: 0%; transition: 0.3s ease-out; }
+        .timer-bar { background: #21262d; border-radius: 20px; height: 10px; margin: 10px 0; overflow: hidden; border: 1px solid #30363d; }
+        #timer-progress { background: var(--success); height: 100%; width: 100%; transition: 1s linear; }
+        #timer-text { font-weight: bold; color: var(--warning); text-align: center; font-size: 1.2em; }
+
+        input { width: 100%; padding: 14px; margin: 10px 0; border: 1px solid #30363d; border-radius: 6px; background: #010409; color: var(--success); box-sizing: border-box; outline: none; font-size: 16px; font-weight: bold; }
+        
+        .btn { width: 100%; padding: 16px; background: #238636; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; font-size: 16px; transition: 0.2s; text-transform: uppercase; }
+        .btn:disabled { background: #1b4b24 !important; color: #8b949e; cursor: not-allowed; }
+        
+        .option { display: block; padding: 15px; margin: 10px 0; background: #21262d; border: 1px solid #30363d; border-radius: 10px; cursor: pointer; transition: 0.3s; }
+        .option.selected { border-color: var(--accent); background: #1c2d3e; }
+        .option.correct-flash { background: #1b4b24 !important; border-color: var(--success) !important; color: white; box-shadow: 0 0 15px rgba(63, 185, 80, 0.4); }
+        .option.wrong-flash { background: #4b1b1b !important; border-color: var(--danger) !important; color: white; }
+
+        .hidden { display: none; }
+        .q-img { width: 100%; border-radius: 8px; margin: 15px 0; pointer-events: none; border: 1px solid #30363d; }
+        #violation-flash { position: fixed; top:0; left:0; width:100%; background: var(--danger); color: white; text-align: center; padding: 10px; font-weight: bold; display: none; z-index: 9999; }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+<div id="violation-flash">ВНИМАНИЕ! НАРУШЕНИЕ РЕЖИМА ТЕРМИНАЛА!</div>
+
+<div id="auth-box" class="container">
+    <h2 style="text-align:center; color:var(--accent);">TERMINAL ACCESS</h2>
+    <input type="text" id="u-name" placeholder="ИМЯ ФАМИЛИЯ" autocomplete="off">
+    <input type="password" id="u-pass" placeholder="КОД ДОСТУПА" autocomplete="off">
+    <button id="login-btn" class="btn" onclick="login()">ВОЙТИ</button>
+    <div id="log" style="color:var(--danger); text-align:center; margin-top:15px; font-size:0.9em; font-weight:bold;"></div>
+</div>
+
+<div id="quiz-box" class="container hidden">
+    <div class="progress-container"><div id="progress-fill"></div></div>
+    <div id="timer-text">--:--</div>
+    <div class="timer-bar"><div id="timer-progress"></div></div>
+    
+    <div style="display:flex; justify-content:space-between; font-size:0.8em; color:var(--accent); margin: 15px 0;">
+        <span>USER: <span id="user-display" style="color:white;"></span></span>
+        <span>ID: <span id="q-counter" style="color:white;">0/0</span></span>
+        <span style="color:var(--danger)">WARNS: <span id="violation-count">0</span></span>
+    </div>
+
+    <div id="q-area">
+        <div id="q-text" style="font-size:1.1em; font-weight: bold;"></div>
+        <div id="q-media"></div>
+        <div id="options"></div>
+        <div id="input-area" class="hidden"><input type="text" id="user-answer" placeholder="Ответ..." autocomplete="off"></div>
+        <button id="confirm-btn" class="btn" onclick="confirmAnswer()" disabled>ОТПРАВИТЬ</button>
+    </div>
+</div>
+
+<div id="result-box" class="container hidden" style="text-align: center;">
+    <h2 style="color:var(--success);">РЕЗУЛЬТАТ</h2>
+    <div id="final" style="font-size: 4em; font-weight: bold; margin: 10px 0;"></div>
+    <p id="reason"></p>
+    <button class="btn" onclick="clearSession()">ЗАВЕРШИТЬ</button>
+</div>
+
+<script>
+    // ================= НАСТРОЙКИ =================
+    const DOC_ID = "1sEvbFnuNBuLRuqDv28Je6kzkrCIVTiR1sILxsfIebqc"; 
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxaxvk3jNKERrqhfhb7_KNSdvHd5kWV44jVJ2YIr_yIF9wNvSQb6281FSaqI--3VQ8O/exec";
+    const TEST_TIME = 90 * 60; // 90 минут
+    // =============================================
+
+    let db = {}, questions = [], score = 0, idx = 0, timer, timeLeft = TEST_TIME, violations = 0, isTestRunning = false, selectedAnswer = null;
+
+    function shuffle(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+    }
+
+    async function load() {
+        try {
+            const res = await fetch(`https://docs.google.com/document/d/${DOC_ID}/export?format=txt`);
+            const data = await res.text();
+            const lines = data.split('\n').map(l => l.trim()).filter(l => l !== "");
+            
+            if (lines[0].startsWith("PASSWORDS:")) {
+                lines[0].replace("PASSWORDS:", "").split(',').forEach(u => {
+                    const [n, p] = u.split('-').map(s => s.trim());
+                    if (n && p) db[n.toLowerCase()] = p;
+                });
+            }
+
+            const blocks = data.substring(data.indexOf('\n') + 1).split(/\r?\n\s*\r?\n/);
+            questions = blocks.map(b => {
+                const l = b.split('\n').map(s => s.trim()).filter(s => s !== "");
+                if (l.length < 2) return null;
+                const correct = l.slice(1).find(o => o.startsWith('*'))?.replace('*', '').trim();
+                const opts = l.slice(1).map(o => o.replace('*', '').trim());
+                return { q: l[0], opts: shuffle(opts), a: correct, isInput: opts.length === 1 };
+            }).filter(x => x && x.a);
+            shuffle(questions);
+
+            const saved = localStorage.getItem('active_session');
+            if (saved) {
+                const d = JSON.parse(saved);
+                idx = d.idx; score = d.score; timeLeft = d.timeLeft; violations = d.violations;
+                document.getElementById('u-name').value = d.user;
+                startTest(d.user);
+            }
+        } catch (e) { document.getElementById('log').innerText = "ОШИБКА БАЗЫ ДАННЫХ"; }
+    }
+
+    async function login() {
+        const n = document.getElementById('u-name').value.trim().toLowerCase();
+        const p = document.getElementById('u-pass').value.trim();
+        const logBox = document.getElementById('log');
+        const btn = document.getElementById('login-btn');
+        
+        if (!n || !p) { logBox.innerText = "ЗАПОЛНИТЕ ВСЕ ПОЛЯ"; return; }
+        if (db[n] !== p) { logBox.innerText = "ДОСТУП ЗАПРЕЩЕН"; return; }
+
+        const registeredUser = localStorage.getItem('registered_user');
+        if (registeredUser && registeredUser !== n) {
+            logBox.innerText = "УСТРОЙСТВО ПРИВЯЗАНО К: " + registeredUser.toUpperCase();
+            return;
+        }
+
+        let deviceId = localStorage.getItem('terminal_device_id');
+        if (!deviceId) {
+            deviceId = 'dev_' + Math.random().toString(36).substr(2, 10);
+            localStorage.setItem('terminal_device_id', deviceId);
+        }
+
+        logBox.style.color = "var(--accent)";
+        logBox.innerText = "ПРОВЕРКА БЕЗОПАСНОСТИ...";
+        btn.disabled = true;
+
+        try {
+            const response = await fetch(`${WEB_APP_URL}?user=${encodeURIComponent(n)}&deviceId=${deviceId}`);
+            const result = await response.json();
+
+            if (result.success) {
+                localStorage.setItem('registered_user', n);
+                startTest(n);
+            } else {
+                logBox.style.color = "var(--danger)";
+                logBox.innerText = result.error;
+                btn.disabled = false;
+            }
+        } catch (e) {
+            logBox.innerText = "ОШИБКА СВЯЗИ С СЕРВЕРОМ";
+            btn.disabled = false;
+        }
+    }
+
+    function startTest(name) {
+        isTestRunning = true;
+        document.getElementById('auth-box').classList.add('hidden');
+        document.getElementById('quiz-box').classList.remove('hidden');
+        document.getElementById('user-display').innerText = name.toUpperCase();
+        startTimer(); render();
+    }
+
+    function startTimer() {
+        timer = setInterval(() => { 
+            timeLeft--; updateTimerUI(); 
+            saveSession();
+            if (timeLeft <= 0) endQuiz(); 
+        }, 1000);
+    }
+
+    function updateTimerUI() {
+        const m = Math.floor(timeLeft / 60), s = timeLeft % 60;
+        document.getElementById('timer-text').innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
+        document.getElementById('timer-progress').style.width = (timeLeft / TEST_TIME) * 100 + "%";
+    }
+
+    function render() {
+        if (idx >= questions.length) { endQuiz(); return; }
+        const q = questions[idx];
+        selectedAnswer = null;
+        document.getElementById('confirm-btn').disabled = true;
+        document.getElementById('q-counter').innerText = `${idx + 1}/${questions.length}`;
+        document.getElementById('progress-fill').style.width = (idx / questions.length) * 100 + "%";
+
+        const imgRegex = /(https?:\/\/[^\s]+|[\w-]+\.(jpg|png|gif|jpeg|webp))/i;
+        const match = q.q.match(imgRegex);
+        document.getElementById('q-text').innerText = q.q.replace(imgRegex, '').trim();
+        document.getElementById('q-media').innerHTML = match ? `<img src="${match[0]}" class="q-img">` : '';
+
+        const optBox = document.getElementById('options');
+        const inpBox = document.getElementById('input-area');
+        optBox.innerHTML = ''; 
+        
+        if (q.isInput) {
+            optBox.classList.add('hidden'); inpBox.classList.remove('hidden');
+            const ui = document.getElementById('user-answer');
+            ui.value = ''; ui.oninput = () => document.getElementById('confirm-btn').disabled = ui.value === '';
+        } else {
+            optBox.classList.remove('hidden'); inpBox.classList.add('hidden');
+            q.opts.forEach(o => {
+                const d = document.createElement('div');
+                d.className = 'option'; d.innerText = o;
+                d.onclick = () => {
+                    if (document.querySelector('.correct-flash')) return;
+                    document.querySelectorAll('.option').forEach(el => el.classList.remove('selected'));
+                    d.classList.add('selected'); selectedAnswer = o;
+                    document.getElementById('confirm-btn').disabled = false;
+                };
+                optBox.appendChild(d);
+            });
+        }
+    }
+
+    function confirmAnswer() {
+        const q = questions[idx];
+        const btn = document.getElementById('confirm-btn');
+        btn.disabled = true;
+        
+        let userAns = q.isInput ? document.getElementById('user-answer').value.trim() : selectedAnswer;
+        let isCorrect = userAns.toLowerCase() === q.a.toLowerCase();
+
+        if (!q.isInput) {
+            document.querySelectorAll('.option').forEach(el => {
+                if (el.innerText === q.a) el.classList.add('correct-flash');
+                if (el.classList.contains('selected') && !isCorrect) el.classList.add('wrong-flash');
+            });
+        }
+
+        if (isCorrect) score++;
+        
+        setTimeout(() => {
+            idx++;
+            render();
+            saveSession();
+        }, 1500);
+    }
+
+    function saveSession() {
+        const data = { user: document.getElementById('user-display').innerText.toLowerCase(), idx, score, timeLeft, violations };
+        localStorage.setItem('active_session', JSON.stringify(data));
+    }
+
+    function endQuiz() {
+        isTestRunning = false; clearInterval(timer);
+        document.getElementById('quiz-box').classList.add('hidden');
+        document.getElementById('result-box').classList.remove('hidden');
+        document.getElementById('final').innerText = Math.round((score / questions.length) * 100) + "%";
+        document.getElementById('reason').innerText = `Верно: ${score}. Нарушений: ${violations}`;
+        localStorage.removeItem('active_session');
+    }
+
+    function clearSession() {
+        location.reload();
+    }
+
+    window.onblur = () => { if(isTestRunning) { violations++; document.getElementById('violation-flash').style.display='block'; setTimeout(()=>document.getElementById('violation-flash').style.display='none', 2000); } };
+
+    load();
+</script>
+</body>
+</html>
