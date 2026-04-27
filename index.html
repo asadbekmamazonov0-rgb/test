@@ -130,7 +130,7 @@
 
         const registeredUser = localStorage.getItem('registered_user');
         if (registeredUser && registeredUser !== n) {
-            logBox.innerText = "УСТРОЙСТВО ПРИВЯЗАНО К: " + registeredUser.toUpperCase();
+         logBox.innerText = "ЛОГИН УЖЕ ИСПОЛЬЗОВАЛИ И НЕ НАРУШАЙТЕ НАШИ ПРАВИЛА!";
             return;
         }
 
